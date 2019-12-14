@@ -43,16 +43,30 @@ function CreateWorkDir {
 
 function GetConfig {
 
-	[ -r "$SystemConfPath"/"$1".conf ] && . "$SystemConfPath"/"$1".conf
-#	|| ( [ "$ShowActivity" = "true" ] && echo "$SystemConfPath was not found" )
-	[ -r "$LocalConfPath"/"$1".conf ] && . "$LocalConfPath"/"$1".conf
-#	|| ( [ "$ShowActivity" = "true" ] && echo "$LocalConfPath was not found" )
-
-	# Apply command-line overrides
-#	HorizontalGrub=${CustomHorizontalGrub:-$HorizontalGrub}
-#	UseTopMenu=${HorizontalGrub:+"true"}
-#	AutoActions=${CustomAutoActions:-$AutoActions}
-#	[ "$ShowActivity" = "true" ] && echo "LocalConfPath" "$LocalConfPath"
+if [ ! -r "$LocalConfPath"/prettyfirefox.conf ]; then
+	if [ -r "$SystemConfPath"/prettyfirefox.conf ]; then
+		cp "$SystemConfPath"/prettyfirefox.conf "$LocalConfPath"/prettyfirefox.conf
+	else
+		echo "$0 is not installed properly! Please, reinstall"
+		exit 1;
+	fi
+fi
+[ -r "$SystemConfPath"/prettyfirefox.conf ] && . "$SystemConfPath"/prettyfirefox.conf || echo "$SystemConfPath/prettyfirefox.conf  was not found"
+[ -r "$LocalConfPath"/prettyfirefox.conf ] && . "$LocalConfPath"/prettyfirefox.conf || echo "$LocalConfPath/prettyfirefox.conf was not found"
+if [ ! -r "$LocalConfPath"/"$1".conf ]; then
+	if [ -r "$SystemConfPath"/"$1".conf ]; then
+		cp "$SystemConfPath"/"$1".conf "$LocalConfPath"/"$1".conf
+	else
+		echo "$1 is not compatible, or required files are not installed properly!"
+		echo "Please, verify proper installation..."
+		exit 1;
+	fi
+fi
+[ -r "$SystemConfPath"/"$1".conf ] && . "$SystemConfPath"/"$1".conf || echo "$SystemConfPath/$1 was not found"
+[ -r "$LocalConfPath"/"$1".conf ] && . "$LocalConfPath"/"$1".conf || echo "$LocalConfPath/"$1".conf was not found"
+[ "$ShowActivity" = "true" ] && echo "RemoteRepoURL:" "$RemoteRepoURL"
+[ "$ShowActivity" = "true" ] && echo "CSSEditor:" $CSSEditor
+[ "$ShowActivity" = "true" ] && echo "DiffProg:" $DiffProg
 
 }
 
@@ -71,9 +85,8 @@ function CheckDepends {
 
 
 function GetLatestVersion {
-ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
-ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
-LatestVersion=${InstVersion:-"0.0.0"} ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
+
+LatestVersion=${InstVersion:-"0.0.0"}
 if [ -d $ScriptSystemVersions ]; then
 	for version in $(ls $ScriptSystemVersions); do
 		LatestMajor=$(echo ${LatestVersion} | cut -d. -f 1)
@@ -85,7 +98,6 @@ if [ -d $ScriptSystemVersions ]; then
 	done
 	[ "$LatestVersion" != "$InstVersion" ] && LatestVersionPath="$ScriptSystemVersions/$LatestVersion"
 fi
-#LatestVersion=$InstVersion ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
 if [ -d $ScriptLocalVersions ]; then
 	for version in $(ls $ScriptLocalVersions); do
 		LatestMajor=$(echo ${LatestVersion} | cut -d. -f 1)
@@ -102,23 +114,17 @@ fi
 
 function GetInstalledVersions {
 
-ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
-ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
-#LatestVersion=${InstVersion:-"0.0.0"} ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
 declare -gA InstalledVersions
 if [ -d $ScriptSystemVersions ]; then
 	for version in $(ls $ScriptSystemVersions); do
 		InstalledVersions[${version}]=$ScriptSystemVersions/$version
 	done
 fi
-#LatestVersion=$InstVersion ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
 if [ -d $ScriptLocalVersions ]; then
 	for version in $(ls $ScriptLocalVersions); do
 		InstalledVersions[${version}]=$ScriptLocalVersions/$version
 	done
 fi
-
-
 
 }
 
@@ -179,14 +185,14 @@ if [ -d $ActiveFxProfileChromePath ] && [ ${InstVersion:+defined} ]; then
 			fi
 		done
 else
-	#echo $PrettyFirefoxHeading >> $NewVersionPath/my_userChrome.css
+
 	cat $NewUserChrome.default | grep -v "my_userChrome" >> $NewVersionPath/my_userChrome.css
 	[ ShowActivity="true" ] && echo "Created $NewVersionPath/my_userChrome.css with default settings"
 	echo "$PrettyFirefoxHeading" > $NewUserChrome
 	echo "@import \"./my_userChrome.css\";" >> $NewUserChrome
 	sed -i -e '/^@import ".\/my_userChrome.css"/ d ' $NewVersionPath/my_userChrome.css
 	[ ShowActivity="true" ] && echo "Created $NewUserChrome with link to my_userChrome.css"
-	#echo $PrettyFirefoxHeading > $NewVersionPath/my_userContent.css
+
 	cat $NewUserContent.default | grep -v "my_userContent" >> $NewVersionPath/my_userContent.css
 	[ ShowActivity="true" ] && echo "Created $NewVersionPath/my_userContent.css with default settings"
 	echo "$PrettyFirefoxHeading" > $NewUserContent
@@ -285,7 +291,6 @@ cp README.md $LocalDataPath/$ExecScript/
 RemoteVersionsLatest=$(git tag --sort=-"v:refname" | grep "^[0-9]" | head)
 cd ..
 
-#TODO Prompt for choice or view release info web page.
 read -p "Do you want to read the remote versions info page? (Y)es/(N)o: " ReadVersionsInfo
 [[ "$ReadVersionsInfo" == "[Yy]" ]] && xdg-open "$RemoteRepoURL/releases"
 while true ; do
@@ -314,7 +319,7 @@ echo "You may read developer's instructions at  $LocalDataPath/$ExecScript/READM
 #### ###======== START HERE =========###
 
 #### ###======== CONSTANTS ==========###
-PFVersion="0.0.1-alpha"
+PFVersion="0.0.1-beta"
 RealUser=$(whoami)
 
 # Application system and local paths
@@ -322,6 +327,8 @@ SystemDataPath=/usr/share/prettyfirefox
 LocalDataPath=${XDG_DATA_HOME:-$HOME/.local/share}/prettyfirefox
 SystemConfPath=/etc/prettyfirefox
 LocalConfPath=${XDG_CONFIG_HOME:-$HOME/.config}/prettyfirefox
+ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
+ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
 FirefoxProfile=""
 PrettyfirefoxHelp="$0 will install, update custom visual modifications to Firefox profile
     using initially CustomCSSforFx repo, potentially adding support for other relevant repos
@@ -377,7 +384,7 @@ else
 				;;
 
 			-x|--script) shift
-				if [ "${1+defined}" ] && [ ! "${1#-}" = "-" ]; then
+				if [ "${1+defined}" ] && [ ! "${1:0:1}" = "-" ]; then
 					ExecScript="$1"
 					shift
 				else
@@ -407,7 +414,7 @@ fi
 
 #### ###=== INITIALIZE CONFIGURATION ===###
 ExecScript=${ExecScript:-"CustomCSSforFx"}
-# GetPaths $ExecScript
+
 for depend in firefox dos2unix ; do
 	CheckDepends $depend
 done
