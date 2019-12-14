@@ -1,0 +1,432 @@
+#!/bin/env bash
+
+#####################################################################
+## ===================== Disclaimer ============================== ##
+## This script-program is a proof-of-concept project and           ##
+## a self training playground on Bash scripting.                   ##
+## It is free for copy and use, while I am not responsible for any ##
+## damage on your software or hardware. Use at your own risk!      ##
+## It would be kind if you report any possible bugs, or ideas for  ##
+## smart improvement of current code logic and possible new        ##
+## features that are relevant.                                     ##
+## =============================================================== ##
+
+#####################################################################
+##                       prettyfirefox                             ##
+##                   alias Pretty Firefox                          ##
+## =============================================================== ##
+#####           petsam's "Adventures in Bash"                   #####
+#####################################################################
+
+#set -euo pipefail
+# set -x
+
+# Create work directory
+function CreateWorkDir {
+	DateSuffix=$(date +%s)
+	if [ ! -z "$TMPDIR" ];then
+		#echo "TMPDIR =" $TMPDIR
+		WorkDir="$TMPDIR"/prettyfirefox-"$DateSuffix"
+	elif [ -d /tmp ];then
+		WorkDir=/tmp/prettyfirefox-"$DateSuffix"
+	else
+		WorkDir=$HOME/.local/tmp/prettyfirefox-"$DateSuffix"
+	fi
+	mkdir -p "$WorkDir"
+	cd $WorkDir
+	[ "$ShowActivity" = "true" ] && echo "Created working directory :" "$WorkDir"
+#	TmpErrors="$WorkDir/errors.log"
+
+}
+
+
+
+function GetConfig {
+
+	[ -r "$SystemConfPath"/"$1".conf ] && . "$SystemConfPath"/"$1".conf
+#	|| ( [ "$ShowActivity" = "true" ] && echo "$SystemConfPath was not found" )
+	[ -r "$LocalConfPath"/"$1".conf ] && . "$LocalConfPath"/"$1".conf
+#	|| ( [ "$ShowActivity" = "true" ] && echo "$LocalConfPath was not found" )
+
+	# Apply command-line overrides
+#	HorizontalGrub=${CustomHorizontalGrub:-$HorizontalGrub}
+#	UseTopMenu=${HorizontalGrub:+"true"}
+#	AutoActions=${CustomAutoActions:-$AutoActions}
+#	[ "$ShowActivity" = "true" ] && echo "LocalConfPath" "$LocalConfPath"
+
+}
+
+#### ###=== CHECK DEPENDS ===###
+
+# Preferred CSS editor (kate, gedit, leafpad, geany, micro, nano, vim)
+function CheckDepends {
+	if [ $(which $1) ] ; then
+		[ "$ShowActivity" = "true" ] && echo $1 is available
+	else
+		echo "$1 is not installed."
+		exit 1;
+	fi
+#fi
+}
+
+
+function GetLatestVersion {
+ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
+ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
+LatestVersion=${InstVersion:-"0.0.0"} ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
+if [ -d $ScriptSystemVersions ]; then
+	for version in $(ls $ScriptSystemVersions); do
+		LatestMajor=$(echo ${LatestVersion} | cut -d. -f 1)
+		LatestMinor=$(echo ${LatestVersion} | cut -d. -f 2)
+		LatestAlpha=$(echo ${LatestVersion} | cut -d. -f 3)
+		[ $(echo $version | cut -d. -f 1) -gt $LatestMajor ] && LatestVersion=$version && continue;
+		[ $(echo $version | cut -d. -f 2) -gt $LatestMinor ] && LatestVersion=$version && continue;
+		[ $(echo $version | cut -d. -f 3) -gt $LatestAlpha ] && LatestVersion=$version && continue;
+	done
+	[ "$LatestVersion" != "$InstVersion" ] && LatestVersionPath="$ScriptSystemVersions/$LatestVersion"
+fi
+#LatestVersion=$InstVersion ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
+if [ -d $ScriptLocalVersions ]; then
+	for version in $(ls $ScriptLocalVersions); do
+		LatestMajor=$(echo ${LatestVersion} | cut -d. -f 1)
+		LatestMinor=$(echo ${LatestVersion} | cut -d. -f 2)
+		LatestAlpha=$(echo ${LatestVersion} | cut -d. -f 3)
+		[[ $(echo $version | cut -d. -f 1) -gt $LatestMajor ]] && LatestVersion=$version && continue;
+		[[ $(echo $version | cut -d. -f 2) -gt $LatestMinor ]] && LatestVersion=$version && continue;
+		[[ $(echo $version | cut -d. -f 3) -gt $LatestAlpha ]] && LatestVersion=$version && continue;
+	done
+	[ "$LatestVersion" != "$InstVersion" ] && LatestVersionPath="$ScriptLocalVersions/$LatestVersion"
+fi
+
+}
+
+function GetInstalledVersions {
+
+ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
+ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
+#LatestVersion=${InstVersion:-"0.0.0"} ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
+declare -gA InstalledVersions
+if [ -d $ScriptSystemVersions ]; then
+	for version in $(ls $ScriptSystemVersions); do
+		InstalledVersions[${version}]=$ScriptSystemVersions/$version
+	done
+fi
+#LatestVersion=$InstVersion ## && LatestMajor=$InstMajor && LatestMinor=$InstMinor && LatestAlpha=$InstAlpha
+if [ -d $ScriptLocalVersions ]; then
+	for version in $(ls $ScriptLocalVersions); do
+		InstalledVersions[${version}]=$ScriptLocalVersions/$version
+	done
+fi
+
+
+
+}
+
+function UpdateVersion {
+if [ ! ${InstVersion:+defined} ]; then
+	echo "$ExecScript is not installed on this Firefox profile!"
+	while true; do
+		read -i "Y" -p "Do you want to install it? (Y)es (N)o : " YesNoAnswer
+		case $YesNoAnswer in
+		[Nn]) exit ;;
+		[Yy]) break ;;
+		*) echo "You have to enter Y for Yes, or N for No!" ;;
+		esac
+	done
+fi
+if [ "$ForceVersion" = "true" ]; then
+	GetInstalledVersions
+	echo InstalledVersions:
+	declare -a link
+	declare -i vc=1
+	for version in ${!InstalledVersions[@]}; do
+		link[$vc]=$version
+		echo "($vc)" $version
+		vc=$vc+1
+		done
+	read -p "Select a version to install: " SelVer
+	NewVersion=${InstalledVersions[${link[$SelVer]}]##*/}
+	NewVersionPath=${InstalledVersions[${link[$SelVer]}]}
+	[ "$ShowActivity" = "true" ] && echo NewVersion: $NewVersion at $NewVersionPath
+else
+	GetLatestVersion $ExecScript
+	NewVersion=$LatestVersion && NewVersionPath=$LatestVersionPath
+fi
+[ "$NewVersion" = "0.0.0" ] && echo "There is no $ExecScript version locally. You need to download one first." && exit;
+[ "$NewVersion" = "${InstVersion:-"0.0.0"}" ] && echo "$ExecScript version is already ${DoUpdate:+"the latest "}v.$NewVersion !" && exit;
+[ ! ${WorkDir:+defined} ] && CreateWorkDir
+mkdir -p "$WorkDir"/"$NewVersion"
+cp -r "$NewVersionPath"/* "$WorkDir"/"$NewVersion"
+NewVersionPath="$WorkDir"/"$NewVersion"
+NewUserChrome=$NewVersionPath"/userChrome.css"
+NewUserContent=$NewVersionPath"/userContent.css"
+# mv $NewUserChrome $NewVersionPath"/userChrome."$ExecScript".readme"
+echo "$PrettyFirefoxHeading" > $NewUserChrome.default
+grep ^@import $NewUserChrome | cut -d" " -f 1,2 >> $NewUserChrome.default
+echo "$PrettyFirefoxHeading" > $NewUserContent.default
+grep ^@import $NewUserContent | cut -d" " -f 1,2 >> $NewUserContent.default
+for file in $NewVersionPath/user{Chrome,Content}.css ; do
+    dos2unix $file > /dev/null 2>&1
+    echo "$PrettyFirefoxHeading" > $NewVersionPath/${file##*/}.$ExecScript.readme
+    cat $file | sed 's/\/\* //g; s/\/\*//g; s/\*\///g; s/\*\*//g; s/\*\*//g; s/ \*$//; s/ \**$//g' >> $NewVersionPath/${file##*/}.$ExecScript.readme
+done
+echo "$NewVersion" > $NewVersionPath/$ExecScript.version
+if [ -d $ActiveFxProfileChromePath ] && [ ${InstVersion:+defined} ]; then
+		for file in $ActiveFxProfileChromePath/{,my_}user{Chrome,Content}.css ; do
+			if [ -r $file ]; then
+				cp $file $NewVersionPath/
+				[ ShowActivity="true" ] && echo Copied $file to $NewVersionPath/
+			fi
+		done
+else
+	#echo $PrettyFirefoxHeading >> $NewVersionPath/my_userChrome.css
+	cat $NewUserChrome.default | grep -v "my_userChrome" >> $NewVersionPath/my_userChrome.css
+	[ ShowActivity="true" ] && echo "Created $NewVersionPath/my_userChrome.css with default settings"
+	echo "$PrettyFirefoxHeading" > $NewUserChrome
+	echo "@import \"./my_userChrome.css\";" >> $NewUserChrome
+	sed -i -e '/^@import ".\/my_userChrome.css"/ d ' $NewVersionPath/my_userChrome.css
+	[ ShowActivity="true" ] && echo "Created $NewUserChrome with link to my_userChrome.css"
+	#echo $PrettyFirefoxHeading > $NewVersionPath/my_userContent.css
+	cat $NewUserContent.default | grep -v "my_userContent" >> $NewVersionPath/my_userContent.css
+	[ ShowActivity="true" ] && echo "Created $NewVersionPath/my_userContent.css with default settings"
+	echo "$PrettyFirefoxHeading" > $NewUserContent
+	echo "@import \"./my_userContent.css\";" >> $NewUserContent
+	sed -i -e '/^@import ".\/my_userContent.css"/ d ' $NewVersionPath/my_userContent.css
+	[ ShowActivity="true" ] && echo "Created $NewUserContent with link to my_userContent.css"
+fi
+if [ -d $ActiveFxProfileChromePath ]; then
+	mv $ActiveFxProfileChromePath $ActiveFxProfileChromePath.$ExecScript.${InstVersion:-"old"}
+	echo "Your old chrome folder was saved as " $ActiveFxProfileChromePath.$ExecScript.${InstVersion:-"old"}
+fi
+cp -r $NewVersionPath $ActiveFxProfileChromePath
+}
+
+function CompareScriptFiles {
+
+
+for CSSfile in $(cut -d" " -f2 $NewVersionPath"/user{Chrome,Content}.css") ; do
+    meld ${FxProfile}/chrome/${CSSfile} ${NewVersionFolder}/${CSSfile}
+done
+
+}
+
+function GetProfile {
+## Get FF profile to use
+
+declare -A FFprofiles
+declare -A FFprofilePaths
+declare -a FFprofileIDs
+ProfilesIni=$HOME/.mozilla/firefox/profiles.ini
+dos2unix $ProfilesIni > /dev/null 2>&1
+[ ! ${WorkDir:+defined} ] && CreateWorkDir
+grep  "[[:print:]]" $HOME"/.mozilla/firefox/profiles.ini" | grep -E "^\[|^Name|^Path|^Default" > $WorkDir/profiles.ini
+
+ProfilesIni=$WorkDir/profiles.ini
+CurProfile=""
+#while IFS= read -r line || [[ -n "$line" ]]; do
+while IFS= read -r line ; do
+	if [ ${line:0:1} = "[" ]; then
+		if [ ${line:1:7} = "Profile" ]; then
+			CurProfile=${line:8:-1}
+			FFprofileIDs=($FFprofileIDs $CurProfile)
+		else
+			CurProfile=""
+		fi
+	elif [ ! "${CurProfile:-"empty"}" = "empty" ]; then
+			if [ "$(echo $line | cut -d= -f1)" = "Name" ]; then
+				FFprofiles[$CurProfile]=$(echo $line | cut -d= -f2)
+			elif [ "$(echo $line | cut -d= -f1)" = "Path" ]; then
+				FFprofilePaths[$CurProfile]=$(echo $line | cut -d= -f2)
+			elif [ "$(echo $line | cut -d= -f1)" = "Default" ]; then
+				if [ "$(echo $line | cut -d= -f2)" = "1" ]; then
+					DefaultProfile=$CurProfile
+				fi
+			fi
+	fi
+	done < "$ProfilesIni"
+rm $ProfilesIni
+if [ ${#FFprofileIDs[@]} -eq 0 ]; then
+	echo "There was no Firefox profile found. You have to start Firefox at least once!"
+	exit;
+elif [ ${#FFprofileIDs[@]} -eq 1 ]; then
+	FirefoxProfile=${FFprofilePaths[0]}
+else
+	echo "More than one Firefox profile were found."
+	for FFprofile in ${FFprofileIDs[@]}
+		do
+			echo "ProfileID: ($FFprofile) Name: ${FFprofiles[$FFprofile]} Path: ${FFprofilePaths[$FFprofile]}"
+		done
+	echo Default Profile is: ${FFprofiles[$DefaultProfile]}
+	while true; do
+		read -i $DefaultProfile  -p "Enter Profile ID number to use: " SelectedProfile
+		if [ ${FFprofileIDs[$SelectedProfile]:+defined} ]; then
+			FirefoxProfile=${FFprofilePaths[$SelectedProfile]}
+			break;
+		else
+			echo "You have to enter the ID number of an existing profile!"
+		fi
+	done
+fi
+
+}
+function DownloadVersion {
+CheckDepends git
+[ ! ${WorkDir:+defined} ] && CreateWorkDir
+#[ ShowActivity="true" ] && echo Working directory is $WorkDir
+#cd $WorkDir
+# Download/clone remote repo
+[ ShowActivity="true" ] && git clone $RemoteRepoURL || git clone $RemoteRepoURL > /dev/null 2>&1
+[[ $? -ne 0 ]] && echo "Failed to clone $ExecScript from $RemoteRepoURL" && return 1;
+cd $ExecScript
+mkdir -p $LocalDataPath/$ExecScript/
+cp README.md $LocalDataPath/$ExecScript/
+# List 10 latest Versions
+#declare -a RemoteVersionsLatest
+RemoteVersionsLatest=$(git tag --sort=-"v:refname" | grep "^[0-9]" | head)
+cd ..
+
+#TODO Prompt for choice or view release info web page.
+read -p "Do you want to read the remote versions info page? (Y)es/(N)o: " ReadVersionsInfo
+[[ "$ReadVersionsInfo" == "[Yy]" ]] && xdg-open "$RemoteRepoURL/releases"
+while true ; do
+	vc=1
+	for ScriptVersion in ${RemoteVersionsLatest[@]}; do
+		RemoteVersions[$vc]="$ScriptVersion"
+		echo "($vc) v."${RemoteVersions[${vc}]}
+		((vc+=1))
+	done
+	read -p "Select a version to download: " GetVersion
+	echo  Selected ${RemoteVersions[GetVersion]}
+	[ ! ${RemoteVersions[GetVersion]} = "" ] && FetchVersion=${RemoteVersions[GetVersion]} && break
+	echo "Wrong selection! Try again, please."
+done
+
+[ ShowActivity="true" ] && wget $RemoteRepoURL/archive/$FetchVersion.tar.gz && wget $RemoteRepoURL/archive/$FetchVersion.tar.gz > /dev/null 2>&1
+[[ $? -ne 0 ]] && echo "Failed to download remote package $ExecScript from $RemoteRepoURL" && return 1;
+tar -xf $FetchVersion.tar.gz
+mkdir -p $LocalDataPath/$ExecScript/versions/$FetchVersion
+cp -r $ExecScript-$FetchVersion/classic/* $LocalDataPath/$ExecScript/versions/$FetchVersion/
+[[ $? -ne 0 ]] && echo "Failed to get version $FetchVersion of $ExecScript from $RemoteRepoURL" && return 1;
+[ ShowActivity="true" ] && echo "Copied new version to "$LocalDataPath/$ExecScript/versions/$FetchVersion/
+echo "You may read developer's instructions at  $LocalDataPath/$ExecScript/README.md"
+}
+
+#### ###======== START HERE =========###
+
+#### ###======== CONSTANTS ==========###
+PFVersion="0.0.1-alpha"
+RealUser=$(whoami)
+
+# Application system and local paths
+SystemDataPath=/usr/share/prettyfirefox
+LocalDataPath=${XDG_DATA_HOME:-$HOME/.local/share}/prettyfirefox
+SystemConfPath=/etc/prettyfirefox
+LocalConfPath=${XDG_CONFIG_HOME:-$HOME/.config}/prettyfirefox
+FirefoxProfile=""
+PrettyfirefoxHelp="$0 will install, update custom visual modifications to Firefox profile
+    using initially CustomCSSforFx repo, potentially adding support for other relevant repos
+
+    Usage: $0 [-h][-v][-i][-u][-r][-m][-V]
+     -h | --help
+                     This help information message
+
+     -V | --version
+                     Show program version
+
+     -u | --update
+                     Update script to the latest version
+
+     -f | --forceversion
+                     Update script to a specific version
+
+     -d | --download
+                     Download another script version
+
+     -x | --script
+                     Firefox profile modification script (i.e. CustomCSSforFx, etc.)
+
+     -v | --verbose
+                    Show more detailed information in the output
+				"
+
+
+PrettyFirefoxHeading="#### Automatically created by prettyfirefox ####
+# Pretty Firefox project by @petsam
+################################################
+"
+
+
+#### ###======== SCRIPT ==========###
+
+#### ###=== COMMAND LINE PARAMETERS ===###
+
+if [ $# -eq 0 ]; then
+	echo -e "$PrettyfirefoxHelp"
+	exit;
+else
+	while [ "${1+defined}" ]; do
+		case "$1" in
+			-h|--help) echo -e "$PrettyfirefoxHelp"
+				exit;
+				;;
+			-V|--version) echo "$0 Version: $PFVersion"
+				exit;
+				;;
+			-v|--verbose) ShowActivity="true"
+				shift
+				;;
+
+			-x|--script) shift
+				if [ "${1+defined}" ] && [ ! "${1#-}" = "-" ]; then
+					ExecScript="$1"
+					shift
+				else
+					echo "Script parameter is required. Exiting..."
+					exit;
+				fi
+				;;
+			-c|--compare) DoCompare="true"
+				shift
+				;;
+			-u|--update) DoUpdate="true"
+				shift
+				;;
+			-f|--forceversion) ForceVersion="true"
+				shift
+				;;
+			-d|--download) DoDownload="true"
+				shift
+				;;
+			*)	echo "Unknown argument $1"
+				echo "Exiting..."
+				exit;;
+		esac
+	done
+fi
+
+
+#### ###=== INITIALIZE CONFIGURATION ===###
+ExecScript=${ExecScript:-"CustomCSSforFx"}
+# GetPaths $ExecScript
+for depend in firefox dos2unix ; do
+	CheckDepends $depend
+done
+GetConfig $ExecScript
+[ ${DoDownload:+defined} ] && DownloadVersion
+
+if [ ${DoUpdate:+defined} ] || [ ${ForceVersion:+defined} ] ; then
+	GetProfile
+[ -r $HOME/.mozilla/firefox/${FirefoxProfile}/chrome/${ExecScript}.version ] && InstVersion=$(tail -n1 $HOME/.mozilla/firefox/${FirefoxProfile}/chrome/${ExecScript}.version)
+	ActiveFxProfileChromePath="$HOME/.mozilla/firefox/${FirefoxProfile}/chrome"
+	UpdateVersion
+	if [[ $? -eq 0 ]]; then
+		echo "$ExecScript was updated to version $NewVersion"
+	else
+		echo "Something went wrong. Inspect your local firefox folder! ~/.mozilla/firefox/${FirefoxProfile}"
+	fi
+fi
+[ ${DoCompare:+defined} ] && echo "Version comparison function is not implemented yet. You have to do it manually."
+# CompareScriptFiles
+#[ ${DoDownload:+defined} ] && echo "Download Version from repo function is not implemented yet. You have to do it manually."
+#ActiveFxCSSVersion=$(tail -n1 ~/.mozilla/firefox/${FirefoxProfile}/chrome/CustomCSSforFx.version)
+#ActiveUserChrome="~/.mozilla/firefox/${FirefoxProfile}/chrome/userChrome"
