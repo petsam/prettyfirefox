@@ -321,7 +321,7 @@ echo "You may read developer's instructions at  $LocalDataPath/$ExecScript/READM
 #### ###======== START HERE =========###
 
 #### ###======== CONSTANTS ==========###
-PFVersion="0.0.1-beta"
+PFVersion="0.1.0"
 RealUser=$(whoami)
 
 PrettyfirefoxHelp="$0 will install, update custom visual modifications to Firefox profile
