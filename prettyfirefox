@@ -45,6 +45,7 @@ function GetConfig {
 
 if [ ! -r "$LocalConfPath"/prettyfirefox.conf ]; then
 	if [ -r "$SystemConfPath"/prettyfirefox.conf ]; then
+        mkdir -p "$LocalConfPath"
 		cp "$SystemConfPath"/prettyfirefox.conf "$LocalConfPath"/prettyfirefox.conf
 	else
 		echo "$0 is not installed properly! Please, reinstall"
@@ -157,6 +158,7 @@ if [ "$ForceVersion" = "true" ]; then
 else
 	GetLatestVersion $ExecScript
 	NewVersion=$LatestVersion && NewVersionPath=$LatestVersionPath
+	[ "$ShowActivity" = "true" ] && echo NewVersion: $NewVersion at $NewVersionPath
 fi
 [ "$NewVersion" = "0.0.0" ] && echo "There is no $ExecScript version locally. You need to download one first." && exit;
 [ "$NewVersion" = "${InstVersion:-"0.0.0"}" ] && echo "$ExecScript version is already ${DoUpdate:+"the latest "}v.$NewVersion !" && exit;
@@ -306,7 +308,7 @@ while true ; do
 	echo "Wrong selection! Try again, please."
 done
 
-[ ShowActivity="true" ] && wget $RemoteRepoURL/archive/$FetchVersion.tar.gz && wget $RemoteRepoURL/archive/$FetchVersion.tar.gz > /dev/null 2>&1
+[ ShowActivity="true" ] && wget $RemoteRepoURL/archive/$FetchVersion.tar.gz || wget $RemoteRepoURL/archive/$FetchVersion.tar.gz > /dev/null 2>&1
 [[ $? -ne 0 ]] && echo "Failed to download remote package $ExecScript from $RemoteRepoURL" && return 1;
 tar -xf $FetchVersion.tar.gz
 mkdir -p $LocalDataPath/$ExecScript/versions/$FetchVersion
@@ -322,14 +324,6 @@ echo "You may read developer's instructions at  $LocalDataPath/$ExecScript/READM
 PFVersion="0.0.1-beta"
 RealUser=$(whoami)
 
-# Application system and local paths
-SystemDataPath=/usr/share/prettyfirefox
-LocalDataPath=${XDG_DATA_HOME:-$HOME/.local/share}/prettyfirefox
-SystemConfPath=/etc/prettyfirefox
-LocalConfPath=${XDG_CONFIG_HOME:-$HOME/.config}/prettyfirefox
-ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
-ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
-FirefoxProfile=""
 PrettyfirefoxHelp="$0 will install, update custom visual modifications to Firefox profile
     using initially CustomCSSforFx repo, potentially adding support for other relevant repos
 
@@ -357,10 +351,11 @@ PrettyfirefoxHelp="$0 will install, update custom visual modifications to Firefo
 				"
 
 
-PrettyFirefoxHeading="#### Automatically created by prettyfirefox ####
+PrettyFirefoxHeading="/*
+#### Automatically created by prettyfirefox ####
 # Pretty Firefox project by @petsam
 ################################################
-"
+*/"
 
 
 #### ###======== SCRIPT ==========###
@@ -414,13 +409,20 @@ fi
 
 #### ###=== INITIALIZE CONFIGURATION ===###
 ExecScript=${ExecScript:-"CustomCSSforFx"}
+# Application system and local paths
+SystemDataPath=/usr/share/prettyfirefox
+LocalDataPath=${XDG_DATA_HOME:-$HOME/.local/share}/prettyfirefox
+SystemConfPath=/etc/prettyfirefox
+LocalConfPath=${XDG_CONFIG_HOME:-$HOME/.config}/prettyfirefox
+ScriptSystemVersions=$SystemDataPath"/"$ExecScript"/versions"
+ScriptLocalVersions=$LocalDataPath"/"$ExecScript"/versions"
+FirefoxProfile=""
 
 for depend in firefox dos2unix ; do
 	CheckDepends $depend
 done
 GetConfig $ExecScript
-[ ${DoDownload:+defined} ] && DownloadVersion
-
+[ ${DoDownload:+defined} ] && DownloadVersion && [[ $? -ne 0 ]] && exit;
 if [ ${DoUpdate:+defined} ] || [ ${ForceVersion:+defined} ] ; then
 	GetProfile
 [ -r $HOME/.mozilla/firefox/${FirefoxProfile}/chrome/${ExecScript}.version ] && InstVersion=$(tail -n1 $HOME/.mozilla/firefox/${FirefoxProfile}/chrome/${ExecScript}.version)
